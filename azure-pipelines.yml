@@ -1,0 +1,44 @@
+trigger:
+- master
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  imageName: 'admin-panel'
+  tag: '$(Build.BuildId)'
+  registry: 'myregistry.azurecr.io' # Change to your registry
+
+steps:
+- script: |
+    echo 'Logging into Azure Container Registry...'
+    docker login -u $(registryUsername) -p $(registryPassword) $registry
+  displayName: 'Docker Registry Login'
+
+- task: Docker@2
+  displayName: 'Build and Push Docker Image'
+  inputs:
+    containerRegistry: |
+      $(registry)
+    repository: $(imageName)
+    command: buildAndPush
+    Dockerfile: $(Build.SourcesDirectory)/Dockerfile
+    tags: |
+      $(tag)
+
+- script: |
+    echo 'Deploying to Server...'
+    ssh $(deploymentServerUser)@$(deploymentServer) "docker pull $registry/$(imageName):$(tag) && docker stop admin-panel && docker rm admin-panel && docker run -d --name admin-panel -p 80:80 $registry/$(imageName):$(tag)"
+  displayName: 'Deploy to Server'
+  env:
+    deploymentServerUser: $(deploymentServerUser)
+    deploymentServer: $(deploymentServer)
+
+- script: |
+    echo 'Post-Deployment Cleanup...'
+    ssh $(deploymentServerUser)@$(deploymentServer) "docker system prune -af"
+  displayName: 'Cleanup on Server'
+  env:
+    deploymentServerUser: $(deploymentServerUser)
+    deploymentServer: $(deploymentServer)
+
